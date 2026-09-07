@@ -1,3 +1,4 @@
+
 export type JobStatus =
   | "CREATED"
   | "QUEUED"
@@ -14,4 +15,5 @@ export interface JobInput {
   payload: Record<string, unknown>;
   maxAttempts?: number;
   priority?: JobPriority;
+  idempotencyKey?: string;
 }

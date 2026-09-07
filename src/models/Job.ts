@@ -12,6 +12,10 @@ export interface JobDocument extends Document {
   error?: string;
   createdAt: Date;
   updatedAt: Date;
+  workerId?: string;
+  lastHeartbeatAt?: Date;
+  idempotencyKey?: string;
+
 }
 
 const jobSchema = new Schema<JobDocument>(
@@ -32,6 +36,9 @@ const jobSchema = new Schema<JobDocument>(
     maxAttempts: { type: Number, default: 3 },
     result: { type: Schema.Types.Mixed },
     error: { type: String },
+    workerId: { type: String },
+    lastHeartbeatAt: { type: Date },
+    idempotencyKey: { type: String, unique: true, sparse: true },
   },
   { timestamps: true }
 );

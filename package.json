@@ -5,9 +5,12 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "worker": "tsx watch src/workers/worker.ts",
-    "scheduler": "tsx watch src/workers/scheduler.ts"
+    "scheduler": "tsx watch src/workers/scheduler.ts",
+    "recovery": "tsx watch src/workers/recovery.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/priorityQueue.test.ts src/recovery.test.ts",
+    "test:crash-recovery": "tsx src/scripts/crash-recovery-e2e.ts"
   },
-  
   "keywords": [],
   "author": "",
   "license": "ISC",
@@ -16,11 +19,14 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "ioredis": "^6.0.0",
+    "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.9.2"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.2.0",
+    "mongodb-memory-server": "^11.2.0",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2"
   }

@@ -61,3 +61,15 @@ export async function scheduleRetry(jobId: string, delayMs: number): Promise<voi
   const executeAt = Date.now() + delayMs;
   await redisClient.zadd(DELAYED_KEY, executeAt, jobId);
 }
+
+export function getHeartbeatIntervalMs(): number {
+  return Number(process.env.HEARTBEAT_INTERVAL_MS ?? 5000);
+}
+
+export function getHeartbeatTimeoutMs(): number {
+  return Number(process.env.HEARTBEAT_TIMEOUT_MS ?? 15000);
+}
+
+export function getRecoveryPollIntervalMs(): number {
+  return Number(process.env.RECOVERY_POLL_INTERVAL_MS ?? 2000);
+}
