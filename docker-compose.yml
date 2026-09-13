@@ -1,0 +1,64 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: taskflow-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+  redis:
+    image: redis:7
+    container_name: taskflow-redis
+    ports:
+      - "6379:6379"
+
+  api:
+    build: .
+    command: npm run dev
+    ports:
+      - "3000:3000"
+    environment:
+      MONGO_URI: mongodb://mongo:27017/taskflow
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: 3000
+    depends_on:
+      - mongo
+      - redis
+
+  worker:
+    build: .
+    command: npm run worker
+    environment:
+      MONGO_URI: mongodb://mongo:27017/taskflow
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      FORCE_SUCCESS: "true"
+      JOB_SLEEP_MS: "0"
+    depends_on:
+      - mongo
+      - redis
+
+  scheduler:
+    build: .
+    command: npm run scheduler
+    environment:
+      MONGO_URI: mongodb://mongo:27017/taskflow
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - mongo
+      - redis
+
+  recovery:
+    build: .
+    command: npm run recovery
+    environment:
+      MONGO_URI: mongodb://mongo:27017/taskflow
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - mongo
+      - redis
+
+volumes:
+  mongo-data:

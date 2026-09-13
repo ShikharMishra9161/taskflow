@@ -1,6 +1,6 @@
 import { Job, JobDocument } from "../models/Job";
 import { JobInput } from "../types/job";
-import { redisClient, queueKeyForPriority } from "../config/redis";
+import { enqueueJob } from "../config/redis";
 
 export async function createJob(
   input: JobInput
@@ -22,10 +22,7 @@ export async function createJob(
     job.status = "QUEUED";
     await job.save();
 
-    await redisClient.lpush(
-      queueKeyForPriority(priority),
-      job._id.toString()
-    );
+    await enqueueJob(job._id.toString(), priority);
 
     return {
       job,

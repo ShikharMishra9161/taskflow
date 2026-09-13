@@ -3,7 +3,7 @@ import { redisClient } from "../config/redis";
 import { AuthedRequest } from "./auth";
 
 const WINDOW_SECONDS = 60;
-const MAX_REQUESTS = 10; // low on purpose, for easy testing
+const MAX_REQUESTS = 100000; // temporarily raised for load-test isolation
 
 export async function rateLimitMiddleware(req: AuthedRequest, res: Response, next: NextFunction) {
   const userId = req.userId;
