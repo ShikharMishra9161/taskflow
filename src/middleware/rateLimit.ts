@@ -2,24 +2,32 @@ import { Response, NextFunction } from "express";
 import { redisClient } from "../config/redis";
 import { AuthedRequest } from "./auth";
 
-const WINDOW_SECONDS = 60;
-const MAX_REQUESTS = 100000; // temporarily raised for load-test isolation
-
 export async function rateLimitMiddleware(req: AuthedRequest, res: Response, next: NextFunction) {
   const userId = req.userId;
   if (!userId) return next(); // auth middleware should run first
 
-  const window = Math.floor(Date.now() / 1000 / WINDOW_SECONDS);
-  const key = `ratelimit:${userId}:${window}`;
+  const windowSeconds = Number(process.env.RATE_LIMIT_WINDOW_SECONDS ?? 60);
+  const maxRequests = Number(process.env.RATE_LIMIT_MAX ?? 300);
 
-  const count = await redisClient.incr(key);
-  if (count === 1) {
-    await redisClient.expire(key, WINDOW_SECONDS);
+  try {
+    const window = Math.floor(Date.now() / 1000 / windowSeconds);
+    const key = `ratelimit:${userId}:${window}`;
+
+    const [[, count]] = (await redisClient
+      .multi()
+      .incr(key)
+      .expire(key, windowSeconds)
+      .exec()) as [[Error | null, number]];
+
+    res.setHeader("X-RateLimit-Limit", maxRequests);
+    res.setHeader("X-RateLimit-Remaining", Math.max(0, maxRequests - count));
+
+    if (count > maxRequests) {
+      return res.status(429).json({ error: "rate limit exceeded, try again later" });
+    }
+
+    next();
+  } catch (err) {
+    next(err);
   }
-
-  if (count > MAX_REQUESTS) {
-    return res.status(429).json({ error: "rate limit exceeded, try again later" });
-  }
-
-  next();
 }

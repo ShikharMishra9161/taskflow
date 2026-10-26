@@ -43,4 +43,9 @@ const jobSchema = new Schema<JobDocument>(
   { timestamps: true }
 );
 
+jobSchema.index({ status: 1, createdAt: -1 });
+jobSchema.index({ createdAt: -1 });
+jobSchema.index({ status: 1, updatedAt: -1 });
+jobSchema.index({ status: 1, lastHeartbeatAt: 1 });
+
 export const Job = model<JobDocument>("Job", jobSchema);

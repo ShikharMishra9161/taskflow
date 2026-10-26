@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Taskflow Dashboard</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Cpath d='M8 11h16M8 16h11M8 21h7' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Login -->
+  <section id="login-view" class="login" hidden>
+    <form id="login-form" class="card login-card">
+      <div class="brand"><span class="logo" aria-hidden="true"></span>Taskflow</div>
+      <p class="muted">Sign in to monitor and manage the job queue.</p>
+      <label>User ID
+        <input name="userId" required autocomplete="username" value="dashboard" />
+      </label>
+      <label>API key <span class="muted small">(required when AUTH_API_KEY is set)</span>
+        <input name="apiKey" type="password" autocomplete="current-password" />
+      </label>
+      <button class="btn primary" type="submit">Sign in</button>
+      <p id="login-error" class="error" role="alert"></p>
+    </form>
+  </section>
+
+  <!-- App -->
+  <div id="app-view" hidden>
+    <header class="topbar">
+      <div class="brand"><span class="logo" aria-hidden="true"></span>Taskflow</div>
+      <div class="health" id="health" aria-live="polite"></div>
+      <div class="topbar-actions">
+        <span class="muted small" id="updated-at"></span>
+        <label class="toggle small"><input type="checkbox" id="auto-refresh" checked /> Auto-refresh</label>
+        <button class="btn" id="refresh-btn" type="button">Refresh</button>
+        <button class="btn" id="theme-btn" type="button" aria-label="Toggle theme">◐</button>
+        <button class="btn" id="new-job-btn" type="button">New job</button>
+        <button class="btn ghost" id="logout-btn" type="button">Sign out</button>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="kpis" id="kpis" aria-label="Queue summary"></section>
+
+      <section class="grid-2">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Throughput</h2>
+              <p class="muted small">Jobs finished per minute, last 60 minutes</p>
+            </div>
+            <div class="legend" id="chart-legend"></div>
+          </div>
+          <div class="chart-wrap" id="chart"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h2>Job types</h2><span class="muted small">top 8 by volume</span></div>
+          <div id="types"></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Workers <span class="count" id="worker-count"></span></h2>
+          <span class="muted small">Live registrations (expire after 3 missed heartbeats)</span>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Worker</th><th>Status</th><th>Current job</th><th class="num">Processed</th><th class="num">Failed</th><th>Up since</th><th>Last seen</th></tr></thead>
+            <tbody id="workers"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head wrap">
+          <h2>Jobs <span class="count" id="job-count"></span></h2>
+          <div class="filters">
+            <select id="status-filter" aria-label="Filter by status">
+              <option value="">All statuses</option>
+              <option>QUEUED</option><option>PROCESSING</option><option>RETRY_SCHEDULED</option>
+              <option>COMPLETED</option><option>FAILED</option><option>DEAD</option><option>CREATED</option>
+            </select>
+            <input id="type-filter" placeholder="Filter by type" aria-label="Filter by type" />
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="jobs">
+            <thead><tr><th>ID</th><th>Type</th><th>Priority</th><th>Status</th><th class="num">Attempts</th><th>Created</th><th>Updated</th><th></th></tr></thead>
+            <tbody id="jobs"></tbody>
+          </table>
+        </div>
+        <div class="pager">
+          <button class="btn" id="prev-page" type="button">‹ Prev</button>
+          <span class="muted small" id="page-label"></span>
+          <button class="btn" id="next-page" type="button">Next ›</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Job detail drawer -->
+  <aside id="drawer" class="drawer" hidden aria-label="Job details">
+    <div class="drawer-head">
+      <h2>Job</h2>
+      <button class="btn ghost" id="drawer-close" type="button" aria-label="Close">✕</button>
+    </div>
+    <div id="drawer-body"></div>
+  </aside>
+
+  <!-- New job dialog -->
+  <dialog id="new-job-dialog">
+    <form id="new-job-form" method="dialog" class="dialog-form">
+      <h2>Enqueue a job</h2>
+      <label>Type <input name="type" required placeholder="send-email" /></label>
+      <div class="row">
+        <label>Priority
+          <select name="priority"><option>default</option><option>high</option><option>low</option></select>
+        </label>
+        <label>Max attempts <input name="maxAttempts" type="number" min="1" max="20" value="3" /></label>
+      </div>
+      <label>Count <input name="count" type="number" min="1" max="200" value="1" /></label>
+      <label>Payload (JSON object) <textarea name="payload" rows="5">{ "job": "demo" }</textarea></label>
+      <label>Idempotency key <span class="muted small">(optional, only with count = 1)</span><input name="idempotencyKey" /></label>
+      <p id="new-job-error" class="error" role="alert"></p>
+      <div class="dialog-actions">
+        <button class="btn ghost" value="cancel" formnovalidate type="submit">Cancel</button>
+        <button class="btn primary" id="new-job-submit" type="button">Enqueue</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

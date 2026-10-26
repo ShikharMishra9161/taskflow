@@ -1,20 +1,26 @@
 {
   "name": "taskflow",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "worker": "tsx watch src/workers/worker.ts",
     "scheduler": "tsx watch src/workers/scheduler.ts",
     "recovery": "tsx watch src/workers/recovery.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/server.js",
+    "start:worker": "node dist/workers/worker.js",
+    "start:scheduler": "node dist/workers/scheduler.js",
+    "start:recovery": "node dist/workers/recovery.js",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/priorityQueue.test.ts src/recovery.test.ts",
-    "test:crash-recovery": "tsx src/scripts/crash-recovery-e2e.ts"
+    "test": "jest --runInBand --forceExit",
+    "test:crash-recovery": "tsx src/scripts/crash-recovery-e2e.ts",
+    "loadtest": "node loadtest.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "Distributed job queue with priorities, retries, DLQ, crash recovery and a live dashboard",
   "dependencies": {
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
@@ -35,5 +41,8 @@
     "ts-jest": "^29.4.12",
     "tsx": "^4.23.12",
     "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

@@ -1,5 +1,12 @@
 import { Request, Response, NextFunction } from "express";
 import * as jobService from "../services/jobService";
+import { JobStatus } from "../types/job";
+
+const PRIORITIES = ["high", "default", "low"];
+
+function paramId(req: Request): string {
+  return Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+}
 
 export async function createJobHandler(
   req: Request,
@@ -13,7 +20,7 @@ export async function createJobHandler(
       maxAttempts,
       priority,
       idempotencyKey,
-    } = req.body;
+    } = req.body ?? {};
 
     if (!type || typeof type !== "string") {
       return res.status(400).json({
@@ -29,6 +36,27 @@ export async function createJobHandler(
     ) {
       return res.status(400).json({
         error: "payload must be an object",
+      });
+    }
+
+    if (priority !== undefined && !PRIORITIES.includes(priority)) {
+      return res.status(400).json({
+        error: `priority must be one of ${PRIORITIES.join(", ")}`,
+      });
+    }
+
+    if (
+      maxAttempts !== undefined &&
+      (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 20)
+    ) {
+      return res.status(400).json({
+        error: "maxAttempts must be an integer between 1 and 20",
+      });
+    }
+
+    if (idempotencyKey !== undefined && typeof idempotencyKey !== "string") {
+      return res.status(400).json({
+        error: "idempotencyKey must be a string",
       });
     }
 
@@ -52,8 +80,7 @@ export async function getJobHandler(
   next: NextFunction
 ) {
   try {
-    const jobId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    const job = await jobService.getJob(jobId);
+    const job = await jobService.getJob(paramId(req));
 
     if (!job) {
       return res.status(404).json({ error: "Job not found" });
@@ -66,13 +93,66 @@ export async function getJobHandler(
 }
 
 export async function listJobsHandler(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const status = typeof req.query.status === "string" ? req.query.status : undefined;
+    const type = typeof req.query.type === "string" ? req.query.type : undefined;
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+    const page = Math.max(Number(req.query.page) || 1, 1);
+
+    if (status && !jobService.JOB_STATUSES.includes(status as JobStatus)) {
+      return res.status(400).json({
+        error: `status must be one of ${jobService.JOB_STATUSES.join(", ")}`,
+      });
+    }
+
+    const filter = { status: status as JobStatus | undefined, type };
+    const [jobs, total] = await Promise.all([
+      jobService.listJobs({ ...filter, limit, skip: (page - 1) * limit }),
+      jobService.countJobs(filter),
+    ]);
+
+    res.setHeader("X-Total-Count", total);
+    return res.status(200).json(jobs);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function retryJobHandler(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const result = await jobService.retryJob(paramId(req));
+
+    if (result === null) {
+      return res.status(404).json({ error: "Job not found" });
+    }
+
+    if (result === "not_retryable") {
+      return res.status(409).json({
+        error: "only DEAD or FAILED jobs can be retried",
+      });
+    }
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function statsHandler(
   _req: Request,
   res: Response,
   next: NextFunction
 ) {
   try {
-    const jobs = await jobService.listJobs();
-    return res.status(200).json(jobs);
+    return res.status(200).json(await jobService.getStats());
   } catch (err) {
     next(err);
   }

@@ -25,7 +25,7 @@ export async function recoverStaleJobs(): Promise<number> {
         $set: { status: "QUEUED" },
         $unset: { workerId: "", lastHeartbeatAt: "" },
       },
-      { new: true }
+      { returnDocument: "after" }
     );
 
     if (!updated) continue;

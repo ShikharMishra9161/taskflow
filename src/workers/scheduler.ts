@@ -11,17 +11,19 @@ async function tick() {
   const dueJobIds = await redisClient.zrangebyscore(DELAYED_KEY, 0, now);
 
   for (const jobId of dueJobIds) {
-    const job = await Job.findById(jobId);
-    if (!job) {
-      await redisClient.zrem(DELAYED_KEY, jobId);
-      continue;
-    }
+    // ZREM is the claim: only the scheduler that removes the entry requeues it,
+    // so running more than one scheduler replica is safe.
+    const claimed = await redisClient.zrem(DELAYED_KEY, jobId);
+    if (claimed === 0) continue;
 
-    await redisClient.zrem(DELAYED_KEY, jobId);
+    const job = await Job.findByIdAndUpdate(
+      jobId,
+      { $set: { status: "QUEUED" } },
+      { returnDocument: "after" }
+    );
+    if (!job) continue;
+
     await enqueueJob(jobId, job.priority);
-
-    job.status = "QUEUED";
-    await job.save();
 
     console.log(`[scheduler] requeued job ${jobId} with priority=${job.priority}`);
   }

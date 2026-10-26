@@ -1,0 +1,85 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# New > Blueprint > pick this repo. You'll be prompted for MONGO_URI
+# (use a MongoDB Atlas connection string). JWT_SECRET and AUTH_API_KEY are
+# generated for you; read AUTH_API_KEY from the API service's Environment tab
+# to sign in to the dashboard.
+
+envVarGroups:
+  - name: taskflow-shared
+    envVars:
+      - key: MONGO_URI
+        sync: false
+      - key: HEARTBEAT_INTERVAL_MS
+        value: "5000"
+      - key: HEARTBEAT_TIMEOUT_MS
+        value: "15000"
+
+services:
+  - type: keyvalue
+    name: taskflow-redis
+    plan: starter
+    # The queue lives in Redis: never evict keys under memory pressure.
+    maxmemoryPolicy: noeviction
+    ipAllowList: []
+
+  - type: web
+    name: taskflow-api
+    runtime: docker
+    plan: starter
+    dockerCommand: node dist/server.js
+    healthCheckPath: /health
+    envVars:
+      - fromGroup: taskflow-shared
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: taskflow-redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: AUTH_API_KEY
+        generateValue: true
+
+  - type: worker
+    name: taskflow-worker
+    runtime: docker
+    plan: starter
+    numInstances: 2
+    dockerCommand: node dist/workers/worker.js
+    envVars:
+      - fromGroup: taskflow-shared
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: taskflow-redis
+          property: connectionString
+      - key: JOB_SLEEP_MS
+        value: "2000"
+      - key: FAILURE_RATE
+        value: "0.2"
+
+  - type: worker
+    name: taskflow-scheduler
+    runtime: docker
+    plan: starter
+    dockerCommand: node dist/workers/scheduler.js
+    envVars:
+      - fromGroup: taskflow-shared
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: taskflow-redis
+          property: connectionString
+
+  - type: worker
+    name: taskflow-recovery
+    runtime: docker
+    plan: starter
+    dockerCommand: node dist/workers/recovery.js
+    envVars:
+      - fromGroup: taskflow-shared
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: taskflow-redis
+          property: connectionString

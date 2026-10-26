@@ -62,6 +62,45 @@ export async function scheduleRetry(jobId: string, delayMs: number): Promise<voi
   await redisClient.zadd(DELAYED_KEY, executeAt, jobId);
 }
 
+export const WORKER_KEY_PREFIX = "workers:";
+
+export interface WorkerInfo {
+  id: string;
+  host: string;
+  pid: number;
+  startedAt: string;
+  lastSeenAt: string;
+  currentJobId: string | null;
+  processed: number;
+  failed: number;
+}
+
+export async function registerWorker(info: WorkerInfo, ttlSeconds: number): Promise<void> {
+  await redisClient.set(`${WORKER_KEY_PREFIX}${info.id}`, JSON.stringify(info), "EX", ttlSeconds);
+}
+
+export async function unregisterWorker(workerId: string): Promise<void> {
+  await redisClient.del(`${WORKER_KEY_PREFIX}${workerId}`);
+}
+
+export async function listWorkers(): Promise<WorkerInfo[]> {
+  const keys: string[] = [];
+  let cursor = "0";
+  do {
+    const [next, batch] = await redisClient.scan(cursor, "MATCH", `${WORKER_KEY_PREFIX}*`, "COUNT", 100);
+    cursor = next;
+    keys.push(...batch);
+  } while (cursor !== "0");
+
+  if (keys.length === 0) return [];
+
+  const values = await redisClient.mget(keys);
+  return values
+    .filter((v): v is string => v !== null)
+    .map((v) => JSON.parse(v) as WorkerInfo)
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
 export function getHeartbeatIntervalMs(): number {
   return Number(process.env.HEARTBEAT_INTERVAL_MS ?? 5000);
 }

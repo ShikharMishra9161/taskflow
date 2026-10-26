@@ -1,8 +1,15 @@
 node_modules
 npm-debug.log
+*.log
 .env
+.env.*
 .git
+.github
 .gitignore
 dist
 coverage
 .vscode
+src/tests
+src/scripts
+loadtest.js
+test-rate-limit.js

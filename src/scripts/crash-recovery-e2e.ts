@@ -13,15 +13,16 @@ import { createJob } from "../services/jobService";
 import { Job } from "../models/Job";
 import { redisClient } from "../config/redis";
 
-const ROOT = path.resolve(__dirname, "..");
-const TSX = path.join(ROOT, "node_modules", ".bin", "tsx.cmd");
+const ROOT = path.resolve(__dirname, "..", "..");
+// Run tsx's CLI through the current node binary: portable across Windows/Linux.
+const TSX_CLI = path.join(ROOT, "node_modules", "tsx", "dist", "cli.mjs");
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function spawnProcess(script: string, env: Record<string, string>) {
-  return spawn(TSX, [script], {
+  return spawn(process.execPath, [TSX_CLI, script], {
     cwd: ROOT,
     env: { ...process.env, ...env },
     stdio: ["ignore", "pipe", "pipe"],

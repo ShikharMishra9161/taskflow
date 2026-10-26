@@ -1,4 +1,5 @@
 import "dotenv/config";
+import os from "node:os";
 import mongoose from "mongoose";
 
 import { Job } from "../models/Job";
@@ -7,15 +8,39 @@ import {
   getHeartbeatIntervalMs,
   popNextQueuedJob,
   redisClient,
+  registerWorker,
   scheduleRetry,
+  unregisterWorker,
+  WorkerInfo,
 } from "../config/redis";
 
-const WORKER_ID = `worker-${process.pid}`;
+// Hostname keeps IDs unique across containers (where every pid is 1).
+const WORKER_ID = `worker-${os.hostname()}-${process.pid}`;
 const MONGO_URI = process.env.MONGO_URI as string;
 
 const JOB_SLEEP_MS = Number(process.env.JOB_SLEEP_MS ?? 30000);
 const CRASH_TEST = process.env.CRASH_TEST === "true";
 const FORCE_SUCCESS = process.env.FORCE_SUCCESS === "true";
+const FAILURE_RATE = Number(process.env.FAILURE_RATE ?? 0.5);
+
+const workerInfo: WorkerInfo = {
+  id: WORKER_ID,
+  host: os.hostname(),
+  pid: process.pid,
+  startedAt: new Date().toISOString(),
+  lastSeenAt: new Date().toISOString(),
+  currentJobId: null,
+  processed: 0,
+  failed: 0,
+};
+
+let shuttingDown = false;
+
+async function reportPresence(): Promise<void> {
+  workerInfo.lastSeenAt = new Date().toISOString();
+  const ttlSeconds = Math.ceil((getHeartbeatIntervalMs() * 3) / 1000);
+  await registerWorker(workerInfo, ttlSeconds);
+}
 
 function computeBackoffMs(attempts: number): number {
   const baseDelay = 2000;
@@ -23,12 +48,26 @@ function computeBackoffMs(attempts: number): number {
 }
 
 export async function processJob(jobId: string): Promise<void> {
-  const job = await Job.findById(jobId);
+  // Claim atomically so a job that was enqueued twice (e.g. by recovery and
+  // the scheduler) is never processed by two workers at once.
+  const job = await Job.findOneAndUpdate(
+    { _id: jobId, status: { $nin: ["PROCESSING", "COMPLETED", "DEAD"] } },
+    {
+      $set: {
+        status: "PROCESSING",
+        workerId: WORKER_ID,
+        lastHeartbeatAt: new Date(),
+      },
+    },
+    { returnDocument: "after" }
+  );
 
   if (!job) {
-    console.log(`[${WORKER_ID}] job ${jobId} not found, skipping`);
+    console.log(`[${WORKER_ID}] job ${jobId} not found or already claimed, skipping`);
     return;
   }
+
+  workerInfo.currentJobId = jobId;
 
   const priority = (job.priority || "default").toUpperCase();
 
@@ -43,13 +82,6 @@ export async function processJob(jobId: string): Promise<void> {
       `payloadJob=${payloadJob} ` +
       `attempt=${job.attempts + 1}/${job.maxAttempts}`
   );
-
-  // Claim the job
-  job.status = "PROCESSING";
-  job.workerId = WORKER_ID;
-  job.lastHeartbeatAt = new Date();
-
-  await job.save();
 
   /*
    * TEST-ONLY CRASH SIMULATION
@@ -100,7 +132,7 @@ export async function processJob(jobId: string): Promise<void> {
     );
 
     // Simulated transient failure
-    if (!FORCE_SUCCESS && Math.random() < 0.5) {
+    if (!FORCE_SUCCESS && Math.random() < FAILURE_RATE) {
       throw new Error("simulated transient failure");
     }
 
@@ -114,6 +146,7 @@ export async function processJob(jobId: string): Promise<void> {
     };
 
     await job.save();
+    workerInfo.processed += 1;
 
     console.log(
       `[${WORKER_ID}] completed job ${jobId}`
@@ -126,6 +159,7 @@ export async function processJob(jobId: string): Promise<void> {
 
     job.attempts += 1;
     job.error = errorMessage;
+    workerInfo.failed += 1;
 
     // Retry
     if (job.attempts < job.maxAttempts) {
@@ -159,6 +193,7 @@ export async function processJob(jobId: string): Promise<void> {
     }
   } finally {
     clearInterval(heartbeatInterval);
+    workerInfo.currentJobId = null;
   }
 }
 
@@ -173,7 +208,23 @@ async function main(): Promise<void> {
     `[${WORKER_ID}] connected, waiting for jobs...`
   );
 
-  while (true) {
+  await reportPresence();
+  const presenceInterval = setInterval(() => {
+    reportPresence().catch((err) =>
+      console.error(`[${WORKER_ID}] presence update failed`, err)
+    );
+  }, getHeartbeatIntervalMs());
+
+  // Finish the in-flight job, then exit (docker stop / k8s SIGTERM).
+  const requestShutdown = (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`[${WORKER_ID}] ${signal} received, finishing current job...`);
+  };
+  process.on("SIGTERM", () => requestShutdown("SIGTERM"));
+  process.on("SIGINT", () => requestShutdown("SIGINT"));
+
+  while (!shuttingDown) {
     const jobId = await popNextQueuedJob();
 
     if (!jobId) {
@@ -186,6 +237,13 @@ async function main(): Promise<void> {
 
     await processJob(jobId);
   }
+
+  clearInterval(presenceInterval);
+  await unregisterWorker(WORKER_ID);
+  await mongoose.disconnect();
+  redisClient.disconnect();
+  console.log(`[${WORKER_ID}] shut down cleanly`);
+  process.exit(0);
 }
 
 if (require.main === module) {

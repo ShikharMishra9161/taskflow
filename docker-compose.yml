@@ -1,64 +1,99 @@
+# Full Taskflow stack: API + dashboard, workers, scheduler, recovery, MongoDB, Redis.
+#
+#   cp .env.example .env   # then set JWT_SECRET (and AUTH_API_KEY for public hosts)
+#   docker compose up -d --build
+#   open http://localhost:3000/dashboard/
+#
+# Scale workers:  docker compose up -d --scale worker=5
+# Local dev only (infra in Docker, app via npm run dev):  docker compose up -d mongo redis
+
+x-app: &app
+  build: .
+  image: ${TASKFLOW_IMAGE:-taskflow:local}
+  restart: unless-stopped
+  environment: &app-env
+    MONGO_URI: mongodb://mongo:27017/taskflow
+    REDIS_URL: redis://redis:6379
+  depends_on:
+    mongo:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
 services:
   mongo:
     image: mongo:7
-    container_name: taskflow-mongo
+    restart: unless-stopped
     ports:
-      - "27017:27017"
+      - "127.0.0.1:${MONGO_HOST_PORT:-27017}:27017"
     volumes:
       - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   redis:
-    image: redis:7
-    container_name: taskflow-redis
+    image: redis:7-alpine
+    restart: unless-stopped
+    # AOF persistence so queued jobs survive a restart; never evict queue keys.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
     ports:
-      - "6379:6379"
+      - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   api:
-    build: .
-    command: npm run dev
+    <<: *app
+    command: ["node", "dist/server.js"]
     ports:
-      - "3000:3000"
+      - "${API_PORT:-3000}:3000"
     environment:
-      MONGO_URI: mongodb://mongo:27017/taskflow
-      REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET}
+      <<: *app-env
       PORT: 3000
-    depends_on:
-      - mongo
-      - redis
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
+      AUTH_API_KEY: ${AUTH_API_KEY:-}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-300}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
 
   worker:
-    build: .
-    command: npm run worker
+    <<: *app
+    command: ["node", "dist/workers/worker.js"]
     environment:
-      MONGO_URI: mongodb://mongo:27017/taskflow
-      REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET}
-      FORCE_SUCCESS: "true"
-      JOB_SLEEP_MS: "0"
-    depends_on:
-      - mongo
-      - redis
+      <<: *app-env
+      JOB_SLEEP_MS: ${JOB_SLEEP_MS:-2000}
+      FAILURE_RATE: ${FAILURE_RATE:-0.2}
+      FORCE_SUCCESS: ${FORCE_SUCCESS:-false}
+      CRASH_TEST: "false"
+      HEARTBEAT_INTERVAL_MS: ${HEARTBEAT_INTERVAL_MS:-5000}
+    deploy:
+      replicas: ${WORKER_REPLICAS:-3}
+    stop_grace_period: 60s
+    healthcheck:
+      disable: true
 
   scheduler:
-    build: .
-    command: npm run scheduler
-    environment:
-      MONGO_URI: mongodb://mongo:27017/taskflow
-      REDIS_URL: redis://redis:6379
-    depends_on:
-      - mongo
-      - redis
+    <<: *app
+    command: ["node", "dist/workers/scheduler.js"]
+    healthcheck:
+      disable: true
 
   recovery:
-    build: .
-    command: npm run recovery
+    <<: *app
+    command: ["node", "dist/workers/recovery.js"]
     environment:
-      MONGO_URI: mongodb://mongo:27017/taskflow
-      REDIS_URL: redis://redis:6379
-    depends_on:
-      - mongo
-      - redis
+      <<: *app-env
+      HEARTBEAT_TIMEOUT_MS: ${HEARTBEAT_TIMEOUT_MS:-15000}
+    healthcheck:
+      disable: true
 
 volumes:
   mongo-data:
+  redis-data:
