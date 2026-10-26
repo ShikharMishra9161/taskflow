@@ -30,6 +30,7 @@ system has to solve.
 | Process | Entry point | Role |
 |---|---|---|
 | API | `src/server.ts` | REST API, JWT auth, rate limiting, serves the dashboard |
+| All-in-one | `src/all.ts` | Runs all four roles in one container (single-service hosting) |
 | Worker | `src/workers/worker.ts` | Claims jobs atomically, heartbeats, retries / dead-letters |
 | Scheduler | `src/workers/scheduler.ts` | Requeues retries once their backoff expires |
 | Recovery | `src/workers/recovery.ts` | Requeues jobs orphaned by crashed workers |
@@ -166,13 +167,15 @@ The job handler (`processJob` in `src/workers/worker.ts`) is a simulation: it sl
 
 ### Render (managed)
 
-`render.yaml` is a Render Blueprint covering the API, 2 workers, the scheduler, recovery, and a Redis-compatible Key Value instance. MongoDB comes from **MongoDB Atlas**.
+`render.yaml` is a Render Blueprint covering the API, a worker, the scheduler, recovery, and a Redis-compatible Key Value instance. MongoDB comes from **MongoDB Atlas**.
 
 1. In Atlas, go to *Network Access* and allow `0.0.0.0/0` (Render has no fixed outbound IPs on starter plans). Copy the connection string, and include a database name, e.g. `…mongodb.net/taskflow?…`.
 2. In Render, choose **New → Blueprint**, pick this repo, and paste the Atlas URI when prompted for `MONGO_URI`.
 3. Open `https://<taskflow-api>.onrender.com/dashboard/` and sign in. Use the generated `AUTH_API_KEY` from the API service's *Environment* tab.
 
 Render background workers need a paid instance type, which is why the blueprint uses `starter`. Render redeploys automatically on every push to `main`.
+
+**Free tier (single service, $0):** Render's free plan has no background workers. Instead, create one free *Web Service* (Docker runtime) with start command `node dist/all.js` and health check path `/health`, plus a free *Key Value* instance. `src/all.ts` runs the API, worker, scheduler and recovery as child processes in one container, restarts any that crash, and forwards `SIGTERM`. The tradeoffs: the service sleeps after 15 minutes without traffic (workers pause with it, and the first request takes about a minute to wake it), and free Key Value isn't persisted, so jobs still waiting in the Redis queue are lost if it restarts.
 
 ### Any VM with Docker
 

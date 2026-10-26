@@ -44,7 +44,7 @@ services:
     name: taskflow-worker
     runtime: docker
     plan: starter
-    numInstances: 2
+    numInstances: 1
     dockerCommand: node dist/workers/worker.js
     envVars:
       - fromGroup: taskflow-shared

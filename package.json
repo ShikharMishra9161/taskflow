@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "test": "jest --runInBand --forceExit",
     "test:crash-recovery": "tsx src/scripts/crash-recovery-e2e.ts",
-    "loadtest": "node loadtest.js"
+    "loadtest": "node loadtest.js",
+    "start:all": "node dist/all.js"
   },
   "keywords": [],
   "author": "",
