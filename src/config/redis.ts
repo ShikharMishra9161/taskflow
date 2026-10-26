@@ -18,8 +18,8 @@ export const JOB_QUEUE_SEQUENCE_KEY = "jobs:queue:sequence";
 
 const PRIORITY_WEIGHT: Record<JobPriority, number> = {
   high: 0,
-  low: 1,
-  default: 2,
+  default: 1,
+  low: 2,
 };
 
 const PRIORITY_BUCKET = 1_000_000_000_000;

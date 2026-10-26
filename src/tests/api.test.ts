@@ -5,7 +5,7 @@ import { MongoMemoryServer } from "mongodb-memory-server";
 import jwt from "jsonwebtoken";
 import app from "../app";
 import { Job } from "../models/Job";
-import { DLQ_KEY, redisClient, registerWorker, unregisterWorker } from "../config/redis";
+import { DLQ_KEY, priorityScore, redisClient, registerWorker, unregisterWorker } from "../config/redis";
 
 let mongoServer: MongoMemoryServer;
 
@@ -24,6 +24,14 @@ afterAll(async () => {
   await mongoose.connection.close();
   await mongoServer.stop();
   redisClient.disconnect();
+});
+
+describe("priorityScore", () => {
+  it("orders high before default before low, FIFO within a priority", () => {
+    expect(priorityScore("high", 100)).toBeLessThan(priorityScore("default", 1));
+    expect(priorityScore("default", 100)).toBeLessThan(priorityScore("low", 1));
+    expect(priorityScore("low", 1)).toBeLessThan(priorityScore("low", 2));
+  });
 });
 
 describe("GET /health", () => {
